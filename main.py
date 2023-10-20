@@ -13,6 +13,7 @@ def build_hash_table(index: v5.ArchiveIndex) -> dict[bytes, v5.ArchiveIndex.Entr
     return out
 
 def upgrade_index(index: v4.ArchiveIndex) -> v5.ArchiveIndex:
+    index.header.version = 5
     return index
 
 def upgrade_manifest(path: Path, hash_table: dict[bytes, v5.ArchiveIndex.Entry]):
@@ -56,7 +57,8 @@ def upgrade_manifest(path: Path, hash_table: dict[bytes, v5.ArchiveIndex.Entry])
         new_resource.flags = old_resource.flags
         new_resource.flags |= (index_entry.encrypted << 2)
         new_resource.flags |= (index_entry.compressed << 3)
-        new_resource.dependants = old_resource.dependants
+        for old_dependant in old_resource.dependants:
+            new_resource.dependants.append(old_dependant)
 
         new_manifest_data.resources.append(new_resource)
 
