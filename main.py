@@ -8,7 +8,7 @@ def build_hash_table(index: v5.ArchiveIndex) -> dict[bytes, v5.ArchiveIndex.Entr
     out = {}
     for i in range(len(index.entries)):
         entry = index.entries[i]
-        hash = index.hashes[i]
+        hash = index.hashes[i].data
         out[hash] = entry
     return out
 
@@ -35,10 +35,13 @@ def upgrade_manifest(path: Path, hash_table: dict[bytes, v5.ArchiveIndex.Entry])
     new_manifest_data.header.resource_hash_algorithm = old_manifest_data.header.resource_hash_algorithm
     new_manifest_data.header.signature_hash_algorithm = old_manifest_data.header.signature_hash_algorithm
     new_manifest_data.header.signature_sign_algorithm = old_manifest_data.header.signature_sign_algorithm
-    new_manifest_data.header.project_identifier = old_manifest_data.header.project_identifier
+    new_manifest_data.header.project_identifier.data = old_manifest_data.header.project_identifier.data
 
     # Set engine versions
-    new_manifest_data.engine_versions = old_manifest_data.engine_versions
+    for old_engine_version in old_manifest_data.engine_versions:
+        new_engine_version = v5.HashDigest()
+        new_engine_version.data = old_engine_version.data
+        new_manifest_data.engine_versions.append(new_engine_version)
 
     # Set resources
     for old_resource in old_manifest_data.resources:

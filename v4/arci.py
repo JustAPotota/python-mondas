@@ -51,6 +51,18 @@ class Arci(KaitaiStruct):
             self.encrypted = self._io.read_bits_int_be(1) != 0
 
 
+    class Hash(KaitaiStruct):
+        def __init__(self, _io, _parent=None, _root=None):
+            self._io = _io
+            self._parent = _parent
+            self._root = _root if _root else self
+            self._read()
+
+        def _read(self):
+            self.data = self._io.read_bytes(self._root.header.hash_length)
+            self.padding = self._io.read_bytes((64 - self._root.header.hash_length))
+
+
     @property
     def entries(self):
         if hasattr(self, '_m_entries'):
@@ -74,7 +86,7 @@ class Arci(KaitaiStruct):
         self._io.seek(self.header.hashes_offset)
         self._m_hashes = []
         for i in range(self.header.entry_count):
-            self._m_hashes.append(self._io.read_bytes(self.header.hash_length))
+            self._m_hashes.append(Arci.Hash(self._io, self, self._root))
 
         self._io.seek(_pos)
         return getattr(self, '_m_hashes', None)

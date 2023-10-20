@@ -13,7 +13,7 @@ instances:
     repeat-expr: header.entry_count
   hashes:
     pos: header.hashes_offset
-    size: header.hash_length
+    type: hash
     repeat: expr
     repeat-expr: header.entry_count
 types:
@@ -49,3 +49,9 @@ types:
         type: b1
       - id: encrypted
         type: b1
+  hash:
+    seq:
+      - id: data
+        size: _root.header.hash_length
+      - id: padding
+        size: 64-_root.header.hash_length
