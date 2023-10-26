@@ -40,7 +40,7 @@ class _Writer:
         self._stream.seek(amount, os.SEEK_CUR)
 
     def seek(self, offset: int) -> None:
-        self._stream.seek(offset)
+        self._stream.seek(offset, os.SEEK_SET)
 
     def rewind(self) -> None:
         self._stream.seek(0)
@@ -114,7 +114,7 @@ class ArchiveIndex:
         writer = _Writer()
 
         header_length = 4 + 4 + 8 + 16 + 16
-        writer.bytes(bytearray(header_length))
+        writer.skip(header_length)
         for entry in self.entries:
             writer.bytes(entry.hash)
             writer.skip(64 - self.hash_length)
@@ -141,6 +141,7 @@ class ArchiveIndex:
 
         self.md5 = md5
 
+        writer.rewind()
         return writer.read()
     
     def find_entry(self, hash: bytes) -> Optional[IndexEntry]:
