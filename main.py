@@ -1,22 +1,23 @@
 import v4
 import v5
+import json
+import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from tempfile import TemporaryDirectory
+from typing import Dict, List, Optional, Self, Tuple
 
-def build_hash_table(index: v5.ArchiveIndex) -> dict[bytes, v5.ArchiveIndex.Entry]:
-    out = {}
-    for i in range(len(index.entries)):
-        entry = index.entries[i]
-        hash = index.hashes[i].data
-        out[hash] = entry
-    return out
+@dataclass
+class DefoldVersion:
+    name: str
+    hash: str
 
 def upgrade_index(index: v4.ArchiveIndex) -> v5.ArchiveIndex:
-    index.header.version = 5
+    index.version = 5
     return index
 
-def upgrade_manifest(path: Path, hash_table: dict[bytes, v5.ArchiveIndex.Entry]):
+def upgrade_manifest(path: Path, index: v5.ArchiveIndex):
     # Load old manifest
     old_manifest_file = v4.ManifestFile()
     old_manifest_file.ParseFromString(path.read_bytes())
@@ -50,31 +51,61 @@ def upgrade_manifest(path: Path, hash_table: dict[bytes, v5.ArchiveIndex.Entry])
         new_resource.hash.data = old_resource.hash.data
         new_resource.url = old_resource.url
         new_resource.url_hash = old_resource.url_hash
+        for old_dependant in old_resource.dependants:
+            new_resource.dependants.append(old_dependant)
 
-        index_entry = hash_table[new_resource.hash.data]
+        # v5 manifest resources now include some data from the index
+        index_entry = index.find_entry(new_resource.hash.data)
+        if index_entry is None:
+            raise Exception(f"Entry for {new_resource.url} not found")
+        
         new_resource.size = index_entry.size
         new_resource.compressed_size = index_entry.compressed_size
         new_resource.flags = old_resource.flags
-        new_resource.flags |= (index_entry.encrypted << 2)
-        new_resource.flags |= (index_entry.compressed << 3)
-        for old_dependant in old_resource.dependants:
-            new_resource.dependants.append(old_dependant)
+        new_resource.flags |= (index_entry.flags & 0b01) << 2
+        new_resource.flags |= (index_entry.flags & 0b10) << 3
 
         new_manifest_data.resources.append(new_resource)
 
     new_manifest_file.data = new_manifest_data.SerializeToString()
     path.write_bytes(new_manifest_file.SerializeToString())
 
+def obj_hook(dict) -> List[DefoldVersion]:
+    versions = []
+    for name, hash in dict.items():
+        versions.append(DefoldVersion(name, hash))
+    return versions
 
 
-def main(game_path: Path):
+def get_engine_version(executable_path: Path) -> Optional[DefoldVersion]:
+    with open("versions.json", "r") as file:
+        versions: List[DefoldVersion] = json.load(file, object_hook=obj_hook)
+    
+    with open(executable_path, "rb") as file:
+        contents = file.read()
+        for version in versions:
+            if contents.find(version.hash.encode()):
+                return version
+
+
+def upgrade_executable(path: Path):
+    version = get_engine_version(path)
+    if version is None:
+        print("Unable to determine engine version of game")
+        return
+    print(f"Engine version: {version.name}")
+
+
+def main(executable_path: Path):
+    game_path = executable_path.resolve().parent
     index_path = game_path / "game.arci"
     manifest_path = game_path / "game.dmanifest"
 
     index = v4.ArchiveIndex.from_file(index_path)
-    index = upgrade_index(index)
-    hash_table = build_hash_table(index)
-    upgrade_manifest(manifest_path, hash_table)
+    # index = upgrade_index(index)
+    # index.write_to_file(index_path)
+    # upgrade_manifest(manifest_path, index)
+    upgrade_executable(executable_path)
 
 if __name__ == "__main__":
     main(Path(sys.argv[1]))

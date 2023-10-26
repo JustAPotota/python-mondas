@@ -1,94 +1,149 @@
-# This is a generated file! Please edit source .ksy file and use kaitai-struct-compiler to rebuild
+import hashlib
+import os
+import struct
+from dataclasses import dataclass
+from io import BytesIO
+from pathlib import Path
+from typing import Optional, Self
 
-import kaitaistruct
-from kaitaistruct import KaitaiStruct, KaitaiStream, BytesIO
+class _Reader:
+    _stream: BytesIO
 
+    def __init__(self, data: bytes) -> None:
+        self._stream = BytesIO(data)
+    
+    def long(self) -> int:
+        return struct.unpack(">q", self._stream.read(8))[0]
+    
+    def skip(self, amount: int) -> None:
+        self._stream.seek(amount, os.SEEK_CUR)
 
-if getattr(kaitaistruct, 'API_VERSION', (0, 9)) < (0, 9):
-    raise Exception("Incompatible Kaitai Struct Python API: 0.9 or later is required, but you have %s" % (kaitaistruct.__version__))
+    def seek(self, offset: int) -> None:
+        self._stream.seek(offset)
 
-class Arci(KaitaiStruct):
-    def __init__(self, _io, _parent=None, _root=None):
-        self._io = _io
-        self._parent = _parent
-        self._root = _root if _root else self
-        self._read()
+    def bytes(self, amount: int) -> bytes:
+        return self._stream.read(amount)
 
-    def _read(self):
-        self.header = Arci.Header(self._io, self, self._root)
+    def int(self) -> int:
+        return struct.unpack(">I", self._stream.read(4))[0]
+    
+class _Writer:
+    _stream: BytesIO
 
-    class Header(KaitaiStruct):
-        def __init__(self, _io, _parent=None, _root=None):
-            self._io = _io
-            self._parent = _parent
-            self._root = _root if _root else self
-            self._read()
+    def __init__(self) -> None:
+        self._stream = BytesIO()
 
-        def _read(self):
-            self.version = self._io.read_u4be()
-            self.padding = self._io.read_bytes(12)
-            self.entry_count = self._io.read_u4be()
-            self.entries_offset = self._io.read_u4be()
-            self.hashes_offset = self._io.read_u4be()
-            self.hash_length = self._io.read_u4be()
-            self.md5 = self._io.read_bytes(16)
+    def long(self, long: int) -> None:
+        self._stream.write(struct.pack(">q", long))
+    
+    def skip(self, amount: int) -> None:
+        self._stream.seek(amount, os.SEEK_CUR)
 
+    def seek(self, offset: int) -> None:
+        self._stream.seek(offset)
 
-    class Entry(KaitaiStruct):
-        def __init__(self, _io, _parent=None, _root=None):
-            self._io = _io
-            self._parent = _parent
-            self._root = _root if _root else self
-            self._read()
+    def rewind(self) -> None:
+        self._stream.seek(0)
 
-        def _read(self):
-            self.offset = self._io.read_u4be()
-            self.size = self._io.read_u4be()
-            self.compressed_size = self._io.read_u4be()
-            self.unused_flags = self._io.read_bits_int_be(29)
-            self.liveupdate = self._io.read_bits_int_be(1) != 0
-            self.compressed = self._io.read_bits_int_be(1) != 0
-            self.encrypted = self._io.read_bits_int_be(1) != 0
+    def current_offset(self) -> int:
+        return self._stream.tell()
 
+    def read(self) -> bytes:
+        return self._stream.read()
 
-    class Hash(KaitaiStruct):
-        def __init__(self, _io, _parent=None, _root=None):
-            self._io = _io
-            self._parent = _parent
-            self._root = _root if _root else self
-            self._read()
+    def bytes(self, bytes: bytes) -> None:
+        self._stream.write(bytes)
 
-        def _read(self):
-            self.data = self._io.read_bytes(self._root.header.hash_length)
-            self.padding = self._io.read_bytes((64 - self._root.header.hash_length))
+    def int(self, int: int) -> None:
+        self._stream.write(struct.pack(">I", int))
 
+@dataclass
+class IndexEntry:
+    offset: int
+    size: int
+    compressed_size: int
+    hash: bytes
+    flags: int
 
-    @property
-    def entries(self):
-        if hasattr(self, '_m_entries'):
-            return self._m_entries
+@dataclass
+class ArchiveIndex:
+    version: int
+    hash_length: int
+    entries: list[IndexEntry]
+    _userdata: int
+    md5: bytes
 
-        _pos = self._io.pos()
-        self._io.seek(self.header.entries_offset)
-        self._m_entries = []
-        for i in range(self.header.entry_count):
-            self._m_entries.append(Arci.Entry(self._io, self, self._root))
+    @classmethod
+    def from_file(cls, path: Path) -> Self:
+        return cls.from_bytes(path.read_bytes())
+    
+    def write_to_file(self, path: Path) -> None:
+        path.write_bytes(self.into_bytes())
+    
+    @classmethod
+    def from_bytes(cls, bytes: bytes) -> Self:
+        reader = _Reader(bytes)
 
-        self._io.seek(_pos)
-        return getattr(self, '_m_entries', None)
+        version = reader.int()
+        reader.skip(4)
+        userdata = reader.long()
+        entry_count = reader.int()
+        entries_offset = reader.int()
+        hashes_offest = reader.int()
+        hash_length = reader.int()
+        md5 = reader.bytes(16)
 
-    @property
-    def hashes(self):
-        if hasattr(self, '_m_hashes'):
-            return self._m_hashes
+        hashes = []
+        for i in range(entry_count):
+            reader.seek(hashes_offest + i * 64)
+            hashes.append(reader.bytes(hash_length))
+        
+        entries = []
+        reader.seek(entries_offset)
+        for i in range(entry_count):
+            offset = reader.int()
+            size = reader.int()
+            compressed_size = reader.int()
+            flags = reader.int()
 
-        _pos = self._io.pos()
-        self._io.seek(self.header.hashes_offset)
-        self._m_hashes = []
-        for i in range(self.header.entry_count):
-            self._m_hashes.append(Arci.Hash(self._io, self, self._root))
+            entries.append(IndexEntry(offset, size, compressed_size, hashes[i], flags))
 
-        self._io.seek(_pos)
-        return getattr(self, '_m_hashes', None)
+        return cls(version, hash_length, entries, userdata, md5)
+    
+    def into_bytes(self) -> bytes:
+        writer = _Writer()
 
+        header_length = 4 + 4 + 8 + 16 + 16
+        writer.bytes(bytearray(header_length))
+        for entry in self.entries:
+            writer.bytes(entry.hash)
+            writer.skip(64 - self.hash_length)
 
+        entries_offset = writer.current_offset()
+        for entry in self.entries:
+            writer.int(entry.offset)
+            writer.int(entry.size)
+            writer.int(entry.compressed_size)
+            writer.int(entry.flags)
+
+        writer.seek(header_length)
+        md5 = hashlib.md5(writer.read()).digest()
+
+        writer.rewind()
+        writer.int(self.version)
+        writer.int(0)
+        writer.long(self._userdata)
+        writer.int(len(self.entries))
+        writer.int(entries_offset)
+        writer.int(header_length)
+        writer.int(self.hash_length)
+        writer.bytes(md5)
+
+        self.md5 = md5
+
+        return writer.read()
+    
+    def find_entry(self, hash: bytes) -> Optional[IndexEntry]:
+        for entry in self.entries:
+            if entry.hash == hash:
+                return entry
