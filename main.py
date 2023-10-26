@@ -1,6 +1,7 @@
 import v4
 import v5
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -10,8 +11,27 @@ from typing import Dict, List, Optional, Self, Tuple
 
 @dataclass
 class DefoldVersion:
-    name: str
+    name: Tuple[int, int, int]
     hash: str
+
+    @classmethod
+    def from_strings(cls, name: str, hash: str) -> Optional[Self]:
+        match = re.search("(\\d+)\\.(\\d+)\\.(\\d+)", name)
+        if match is None:
+            return
+        groups = match.groups()
+        if len(groups) != 3:
+            return
+        try:
+            x = int(groups[0])
+            y = int(groups[1])
+            z = int(groups[2])
+            return cls((x,y,z), hash)
+        except ValueError:
+            return
+        
+    def __repr__(self) -> str:
+        return f"DefoldVersion(name='{self.name[0]}.{self.name[1]}.{self.name[2]}', hash='{self.hash}')"
 
 def upgrade_index(index: v4.ArchiveIndex) -> v5.ArchiveIndex:
     index.version = 5
@@ -73,7 +93,11 @@ def upgrade_manifest(path: Path, index: v5.ArchiveIndex):
 def obj_hook(dict) -> List[DefoldVersion]:
     versions = []
     for name, hash in dict.items():
-        versions.append(DefoldVersion(name, hash))
+        version = DefoldVersion.from_strings(name, hash)
+        if version is not None:
+            versions.append(version)
+        else:
+            print(f"Invalid version name '{name}'")
     return versions
 
 
@@ -84,7 +108,7 @@ def get_engine_version(executable_path: Path) -> Optional[DefoldVersion]:
     with open(executable_path, "rb") as file:
         contents = file.read()
         for version in versions:
-            if contents.find(version.hash.encode()):
+            if contents.find(version.hash.encode()) != -1:
                 return version
 
 
@@ -93,7 +117,7 @@ def upgrade_executable(path: Path):
     if version is None:
         print("Unable to determine engine version of game")
         return
-    print(f"Engine version: {version.name}")
+    print(f"Engine version: {version}")
 
 
 def main(executable_path: Path):
