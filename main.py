@@ -31,7 +31,7 @@ class DefoldVersion:
             return
         
     def __repr__(self) -> str:
-        return f"DefoldVersion(name='{self.name[0]}.{self.name[1]}.{self.name[2]}', hash='{self.hash}')"
+        return f"{self.name[0]}.{self.name[1]}.{self.name[2]} ({self.hash})"
 
 def upgrade_index(index: v4.ArchiveIndex) -> v5.ArchiveIndex:
     index.version = 5
@@ -99,8 +99,6 @@ def obj_hook(dict) -> List[DefoldVersion]:
         else:
             print(f"Invalid version name '{name}'")
     return versions
-
-
 def get_engine_version(executable_path: Path) -> Optional[DefoldVersion]:
     with open("versions.json", "r") as file:
         versions: List[DefoldVersion] = json.load(file, object_hook=obj_hook)
@@ -111,25 +109,30 @@ def get_engine_version(executable_path: Path) -> Optional[DefoldVersion]:
             if contents.find(version.hash.encode()) != -1:
                 return version
 
+def upgrade_executable(path: Path, current_version: DefoldVersion):
+    pass
 
-def upgrade_executable(path: Path):
-    version = get_engine_version(path)
-    if version is None:
-        print("Unable to determine engine version of game")
-        return
-    print(f"Engine version: {version}")
+def needs_updating(version: DefoldVersion) -> bool:
+    return version.name[1] < 5
 
 
 def main(executable_path: Path):
+    current_version = get_engine_version(executable_path)
+    if current_version is None:
+        return print("Unable to determine the engine version used")
+    print(f"Detected engine version {current_version}")
+    if not needs_updating(current_version):
+        return print("This game already supports the new liveupdate system")
+    
     game_path = executable_path.resolve().parent
     index_path = game_path / "game.arci"
     manifest_path = game_path / "game.dmanifest"
 
     index = v4.ArchiveIndex.from_file(index_path)
-    # index = upgrade_index(index)
-    # index.write_to_file(index_path)
-    # upgrade_manifest(manifest_path, index)
-    upgrade_executable(executable_path)
+    index = upgrade_index(index)
+    index.write_to_file(index_path)
+    upgrade_manifest(manifest_path, index)
+    upgrade_executable(executable_path, current_version)
 
 if __name__ == "__main__":
     main(Path(sys.argv[1]))
