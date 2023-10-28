@@ -31,10 +31,10 @@ def main():
         g = Github(auth=Auth.Token(token))
     else:
         g = Github()
-        
+
     versions = fetch_versions(g)
 
-    with open("versions.json", "w") as file:
+    with open("defold_versions.json", "w") as file:
         file.write(json.dumps(versions, default=vars, indent=4))
 
 if __name__ == "__main__":
