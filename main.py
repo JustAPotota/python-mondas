@@ -29,23 +29,19 @@ class DefoldVersion:
         if match is None:
             return
         
-        groups = match.groups()
-        if len(groups) < 3:
-            return
+        groups = match.groups(default="stable")
         
         try:
             x = int(groups[0])
             y = int(groups[1])
             z = int(groups[2])
-            channel = DefoldChannel.Stable
-            if len(groups) == 4:
-                channel = DefoldChannel(groups[3])
+            channel = DefoldChannel(groups[3])
             return cls((x,y,z), channel, sha, datetime.fromisoformat(date))
         except ValueError:
             return
         
     def __repr__(self) -> str:
-        return f"{self.number[0]}.{self.number[1]}.{self.number[2]} ({self.sha})"
+        return f"{self.number[0]}.{self.number[1]}.{self.number[2]}-{self.channel.value} ({self.sha})"
     
 @dataclass
 class Extension:
