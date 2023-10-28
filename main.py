@@ -32,6 +32,17 @@ class DefoldVersion:
         
     def __repr__(self) -> str:
         return f"{self.name[0]}.{self.name[1]}.{self.name[2]} ({self.hash})"
+    
+@dataclass
+class Extension:
+    symbol: bytes
+    repo: str
+
+EXTENSIONS = [
+    Extension(b"STEAMWORKS", "britzl/steamworks-defold"),
+    Extension(b"DAABBCC", "selimanac/DAABBCC"),
+    Extension(b"DEFOS", "subsoap/defos")
+]
 
 def upgrade_index(index: v4.ArchiveIndex) -> v5.ArchiveIndex:
     index.version = 5
@@ -99,6 +110,7 @@ def obj_hook(dict) -> List[DefoldVersion]:
         else:
             print(f"Invalid version name '{name}'")
     return versions
+
 def get_engine_version(executable_path: Path) -> Optional[DefoldVersion]:
     with open("versions.json", "r") as file:
         versions: List[DefoldVersion] = json.load(file, object_hook=obj_hook)
@@ -108,6 +120,9 @@ def get_engine_version(executable_path: Path) -> Optional[DefoldVersion]:
         for version in versions:
             if contents.find(version.hash.encode()) != -1:
                 return version
+            
+def native_extensions_used(executable_path: Path, available_extensions: List[Extension]) -> List[Extension]:
+    pass
 
 def upgrade_executable(path: Path, current_version: DefoldVersion):
     pass
