@@ -5,33 +5,47 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Optional, Self, Tuple
 
+class DefoldChannel(Enum):
+    Alpha = "alpha"
+    Beta = "beta"
+    Stable = "stable"
+
 @dataclass
 class DefoldVersion:
-    name: Tuple[int, int, int]
-    hash: str
+    number: Tuple[int, int, int]
+    channel: DefoldChannel
+    sha: str
+    date: datetime
 
     @classmethod
-    def from_strings(cls, name: str, hash: str) -> Optional[Self]:
-        match = re.search("(\\d+)\\.(\\d+)\\.(\\d+)", name)
+    def from_strings(cls, name: str, sha: str, date: str) -> Optional[Self]:
+        match = re.search("(\\d+)\\.(\\d+)\\.(\\d+)-?(alpha|beta)?", name)
         if match is None:
             return
+        
         groups = match.groups()
-        if len(groups) != 3:
+        if len(groups) < 3:
             return
+        
         try:
             x = int(groups[0])
             y = int(groups[1])
             z = int(groups[2])
-            return cls((x,y,z), hash)
+            channel = DefoldChannel.Stable
+            if len(groups) == 4:
+                channel = DefoldChannel(groups[3])
+            return cls((x,y,z), channel, sha, datetime.fromisoformat(date))
         except ValueError:
             return
         
     def __repr__(self) -> str:
-        return f"{self.name[0]}.{self.name[1]}.{self.name[2]} ({self.hash})"
+        return f"{self.number[0]}.{self.number[1]}.{self.number[2]} ({self.sha})"
     
 @dataclass
 class Extension:
@@ -101,24 +115,16 @@ def upgrade_manifest(path: Path, index: v5.ArchiveIndex):
     new_manifest_file.data = new_manifest_data.SerializeToString()
     path.write_bytes(new_manifest_file.SerializeToString())
 
-def obj_hook(dict) -> List[DefoldVersion]:
-    versions = []
-    for name, hash in dict.items():
-        version = DefoldVersion.from_strings(name, hash)
-        if version is not None:
-            versions.append(version)
-        else:
-            print(f"Invalid version name '{name}'")
-    return versions
+def load_defold_versions(json_path: Path) -> list[DefoldVersion]:
+    with open(json_path, "r") as file:
+        versions = [DefoldVersion.from_strings(**version) for version in json.load(file)]
+        return [version for version in versions if version is not None]
 
-def get_engine_version(executable_path: Path) -> Optional[DefoldVersion]:
-    with open("versions.json", "r") as file:
-        versions: List[DefoldVersion] = json.load(file, object_hook=obj_hook)
-    
+def get_engine_version(executable_path: Path, versions: list[DefoldVersion]) -> Optional[DefoldVersion]:
     with open(executable_path, "rb") as file:
         contents = file.read()
         for version in versions:
-            if contents.find(version.hash.encode()) != -1:
+            if contents.find(version.sha.encode()) != -1:
                 return version
             
 def native_extensions_used(executable_path: Path, available_extensions: List[Extension]) -> List[Extension]:
@@ -128,11 +134,11 @@ def upgrade_executable(path: Path, current_version: DefoldVersion):
     pass
 
 def needs_updating(version: DefoldVersion) -> bool:
-    return version.name[1] < 5
-
+    return version.number[1] < 5
 
 def main(executable_path: Path):
-    current_version = get_engine_version(executable_path)
+    versions = load_defold_versions(Path("defold_versions.json"))
+    current_version = get_engine_version(executable_path, versions)
     if current_version is None:
         return print("Unable to determine the engine version used")
     print(f"Detected engine version {current_version}")
