@@ -2,13 +2,11 @@ import v4
 import v5
 import json
 import re
-import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Dict, List, Optional, Self, Tuple
 
 class DefoldChannel(Enum):
