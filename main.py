@@ -4,6 +4,7 @@ import json
 import os
 import re
 import requests
+import shutil
 from argparse import ArgumentParser
 from configparser import ConfigParser
 from dataclasses import dataclass
@@ -83,7 +84,7 @@ def upgrade_index(index: v4.ArchiveIndex) -> v5.ArchiveIndex:
     index.version = 5
     return index
 
-def upgrade_manifest(path: Path, index: v5.ArchiveIndex):
+def upgrade_manifest(path: Path, output: Path, index: v5.ArchiveIndex):
     # Load old manifest
     old_manifest_file = v4.ManifestFile()
     old_manifest_file.ParseFromString(path.read_bytes())
@@ -134,7 +135,7 @@ def upgrade_manifest(path: Path, index: v5.ArchiveIndex):
         new_manifest_data.resources.append(new_resource)
 
     new_manifest_file.data = new_manifest_data.SerializeToString()
-    path.write_bytes(new_manifest_file.SerializeToString())
+    output.write_bytes(new_manifest_file.SerializeToString())
 
 def load_extensions(json_path: Path) -> list[Extension]:
     with open(json_path, "r") as file:
@@ -208,7 +209,7 @@ def get_all_file_names(path: Path) -> list[Path]:
     return files
 
 def save_executable(zip: ZipFile, path: Path, platform: str):
-    filename = "dmengine"if platform == "x86_64-linux" else "dmengine.exe"
+    filename = "dmengine" if platform == "x86_64-linux" else "dmengine.exe"
     with zip.open(filename, "r") as source:
         with open(path, "wb") as dest:
             dest.write(source.read())
@@ -237,6 +238,7 @@ def upgrade_executable(path: Path, to_version: DefoldVersion, platform: str, rel
             raise Exception(response.text)
         with ZipFile(BytesIO(response.content)) as zip:
             save_executable(zip, path, platform)
+            path.chmod(755)
 
 def needs_updating(version: DefoldVersion) -> bool:
     return version.number[1] < 5
@@ -256,15 +258,24 @@ def main(executable_path: Path, release_date: Optional[date], platform: str):
     index_path = game_path / "game.arci"
     manifest_path = game_path / "game.dmanifest"
 
-    index = v4.ArchiveIndex.from_file(index_path)
-    index = upgrade_index(index)
-    index.write_to_file(index_path)
-    upgrade_manifest(manifest_path, index)
+    with TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        index = v4.ArchiveIndex.from_file(index_path)
+        index = upgrade_index(index)
+        index.write_to_file(tmp / "game.arci")
+        print("Upgraded index file")
+        upgrade_manifest(manifest_path, tmp / "game.dmanifest", index)
+        print("Upgraded manifest file")
 
-    if release_date is None:
-        upgrade_executable(executable_path, to_version, platform, current_version.date, extensions)
-    else:
-        upgrade_executable(executable_path, to_version, platform, datetime.combine(release_date, time()).astimezone(), extensions)
+        if release_date is None:
+            upgrade_executable(executable_path, to_version, platform, current_version.date, extensions)
+        else:
+            upgrade_executable(executable_path, to_version, platform, datetime.combine(release_date, time()).astimezone(), extensions)
+        print("Upgraded executable")
+
+        shutil.move(tmp / "game.arci", index_path)
+        shutil.move(tmp / "game.dmanifest", manifest_path)
+        print("Upgrade complete!")
 
 def parse_datetime(s: str) -> datetime:
     return datetime.strptime(s, "%d/%m/%Y")
